@@ -1,0 +1,70 @@
+# Lista de versões do xk6:
+# https://github.com/grafana/xk6/releases
+
+# Extensão do k6 para RabbitMQ:
+# https://github.com/grafana/xk6-amqp
+
+trigger:
+- main
+
+variables:
+  loadTestsScript: 'loadtest-contagem-rabbitmq.js'
+  htmtReportK6: 'rabbitmq-loadtests.html'
+  testsDirectory: './Tests'
+
+  # Agent VM image name
+  vmImageName: 'ubuntu-latest'
+
+stages:
+- stage: Tests
+  displayName: Tests stage
+  variables:
+    - group: rabbitmq-configurations
+  jobs:
+  - job: Tests
+    displayName: Tests
+    pool:
+      vmImage: $(vmImageName)
+    steps:
+    - task: replacetokens@5
+      inputs:
+        targetFiles: '$(testsDirectory)/$(loadTestsScript)'
+        encoding: 'auto'
+        tokenPattern: 'default'
+        writeBOM: true
+        actionOnMissing: 'warn'
+        keepToken: false
+        actionOnNoFiles: 'continue'
+        enableTransforms: false
+        enableRecursion: false
+        useLegacyPattern: false
+        enableTelemetry: true
+      displayName: 'Atualizar script de testes com após replaces'
+    - script: |
+        cd $(testsDirectory)
+        cat $(loadTestsScript)
+      displayName: 'Exibir conteúdo do script de testes'
+    - script: |
+        cd $(testsDirectory)
+        wget https://github.com/grafana/xk6/releases/download/v0.8.1/xk6_0.8.1_linux_amd64.tar.gz
+        tar -xvf xk6_0.8.1_linux_amd64.tar.gz
+      displayName: Baixar e instalar o módulo do k6 para extensões (xk6)
+    - script: |
+        cd $(testsDirectory)
+        ./xk6 build --with github.com/grafana/xk6-amqp@v0.3.0
+        ls
+        ./k6
+      displayName: Gerar o executável do k6 com suporte ao RabbitMQ
+    - script: |
+        cd $(testsDirectory)
+        ./k6 run $(loadTestsScript) --vus $(UsuarioSimultaneos) --iterations $(TotalRequisicoes)
+        echo ' '
+        echo ' '
+        echo '** Arquivos/diretórios após a execução dos testes e a partir da raiz:'
+        ls
+      displayName: Executar testes de carga enviando mensagens para o RabbitMQ
+    - task: PublishHtmlReport@1
+      condition: always()
+      inputs:
+        reportDir: $(testsDirectory)/$(htmtReportK6)
+      displayName: Publicar relatório com os resultados dos testes
